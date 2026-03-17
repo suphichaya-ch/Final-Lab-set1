@@ -1,0 +1,67 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: rootpassword
+      POSTGRES_DB: final_lab_db
+    ports:
+      - "5432:5432"
+    volumes:
+      # volume สำหรับเก็บ data
+      - db-data:/var/lib/postgresql/data
+      # mount ไฟล์ SQL จริง ๆ สำหรับ initialize
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+
+  nginx:
+    build: ./nginx
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - frontend
+      - auth-service
+      - task-service
+      - log-service
+
+  frontend:
+    build: ./frontend
+
+  auth-service:
+    build: ./auth-service
+    ports:
+      - "3001:3001"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: root
+      DB_PASSWORD: rootpassword
+      DB_NAME: final_lab_db
+
+  task-service:
+    build: ./task-service
+    ports:
+      - "3002:3002"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: root
+      DB_PASSWORD: rootpassword
+      DB_NAME: final_lab_db
+
+  log-service:
+    build: ./log-service
+    ports:
+      - "3003:3003"
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_USER: root
+      DB_PASSWORD: rootpassword
+      DB_NAME: final_lab_db
+
+volumes:
+  db-data:
