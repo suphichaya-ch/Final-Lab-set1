@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>🔐 Task Board — Final Lab Set 1</title>
+  <style>
+    /* copy CSS ทั้งหมดจาก Week 12 index.html */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f172a; --surface: #1e293b; --surface2: #273448;
+      --border: #334155; --text: #e2e8f0; --muted: #94a3b8;
+      --blue: #3b82f6; --green: #22c55e; --yellow: #f59e0b;
+      --red: #ef4444; --purple: #a855f7;
+    }
+    /* ... (copy CSS จาก Week 12) ... */
+  </style>
+</head>
+<body>
+
+<!-- ════ AUTH PAGE ════ (Login เท่านั้น ไม่มี Register tab) -->
+<div id="auth-page">
+  <div class="auth-box">
+    <div class="auth-logo">🔐</div>
+    <div class="auth-title">Task Board — Final Lab</div>
+
+    <div id="login-form">
+      <div class="form-group">
+        <label>Email</label>
+        <input id="login-email" type="email" value="alice@lab.local">
+      </div>
+      <div class="form-group">
+        <label>Password</label>
+        <input id="login-password" type="password" value="alice123">
+      </div>
+      <button class="btn-primary" onclick="doLogin()">เข้าสู่ระบบ</button>
+    </div>
+
+    <div id="auth-msg"></div>
+
+    <!-- Seed users hint -->
+    <div style="margin-top:1rem;padding:.75rem;background:rgba(59,130,246,.1);border-radius:.5rem;font-size:.82rem">
+      <strong>🔑 Seed Users:</strong><br>
+      alice@lab.local / alice123 (member)<br>
+      bob@lab.local / bob456 (member)<br>
+      admin@lab.local / adminpass (admin)
+    </div>
+  </div>
+</div>
+
+<!-- ════ MAIN APP ════ -->
+<div id="app-page" class="hidden">
+  <nav class="sidebar">
+    <div class="sidebar-logo">📋 Task Board</div>
+    <div class="sidebar-nav">
+      <button class="nav-item active" data-page="tasks" onclick="showPage('tasks')">
+        <span class="nav-icon">✅</span> Tasks
+      </button>
+      <button class="nav-item" data-page="profile" onclick="showPage('profile')">
+        <span class="nav-icon">👤</span> Profile & JWT
+      </button>
+      <!-- Log Dashboard — เปิดหน้าใหม่ (admin เท่านั้น) -->
+      <a href="logs.html" target="_blank" class="nav-item" style="text-decoration:none">
+        <span class="nav-icon">📊</span> Log Dashboard
+        <span style="margin-left:auto;font-size:.7rem;color:var(--muted)">↗</span>
+      </a>
+    </div>
+    <div class="sidebar-footer">
+      <!-- User info + logout button -->
+      <div class="user-chip">
+        <div class="user-avatar" id="sidebar-avatar">?</div>
+        <div>
+          <div id="sidebar-name">—</div>
+          <span class="role-badge" id="sidebar-role-badge">—</span>
+        </div>
+        <button onclick="doLogout()">✕</button>
+      </div>
+    </div>
+  </nav>
+
+  <div class="main-content">
+    <div id="page-tasks"><!-- Task list + create/edit modal --></div>
+    <div id="page-profile" class="hidden"><!-- Profile + JWT inspector --></div>
+  </div>
+</div>
+
+<script>
+const API = '';  // relative URL — Nginx จัดการ routing
+let token = localStorage.getItem('jwt_token');
+let currentUser = null;
+
+async function doLogin() {
+  const email    = document.getElementById('login-email').value.trim();
+  const password = document.getElementById('login-password').value;
+  if (!email || !password) { showAuthMsg('กรุณากรอกข้อมูลให้ครบ','error'); return; }
+
+  const res  = await fetch(`${API}/api/auth/login`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, password })
+  });
+  const data = await res.json();
+
+  if (res.ok) {
+    token = data.token;
+    localStorage.setItem('jwt_token', token);
+    initApp(data.user);
+  } else {
+    showAuthMsg('❌ ' + (data.error || 'Login ล้มเหลว'), 'error');
+  }
+}
+
+function showAuthMsg(msg, type) {
+  const el = document.getElementById('auth-msg');
+  el.className = `auth-msg ${type}`;
+  el.textContent = msg;
+}
+
+function doLogout() {
+  localStorage.removeItem('jwt_token');
+  token = null; currentUser = null;
+  document.getElementById('app-page').classList.add('hidden');
+  document.getElementById('auth-page').classList.remove('hidden');
+}
+
+function initApp(user) {
+  currentUser = user;
+  document.getElementById('auth-page').classList.add('hidden');
+  document.getElementById('app-page').classList.remove('hidden');
+  document.getElementById('sidebar-avatar').textContent = (user.username||'?').charAt(0).toUpperCase();
+  document.getElementById('sidebar-name').textContent   = user.username || user.email;
+  const rb = document.getElementById('sidebar-role-badge');
+  rb.textContent = user.role;
+  rb.className   = `role-badge role-${user.role}`;
+  showPage('tasks');
+}
+
+function showPage(page) {
+  ['tasks','profile'].forEach(p => {
+    document.getElementById(`page-${p}`).classList.toggle('hidden', p !== page);
+    const btn = document.querySelector(`[data-page="${p}"]`);
+    if (btn) btn.classList.toggle('active', p === page);
+  });
+  if (page === 'tasks')   loadTasks();
+  if (page === 'profile') loadProfile();
+}
+
+/* ── loadTasks, renderTasks, openCreateModal, submitTask,
+       confirmDelete, loadProfile, renderJwtInspector, escHtml
+   ── copy ทั้งหมดจาก Week 12 index.html ── */
+
+// Auto-login ถ้ามี token เก่า
+if (token) {
+  (async () => {
+    const res  = await fetch(`${API}/api/auth/verify`, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    const data = await res.json();
+    if (data.valid) initApp(data.user);
+    else { localStorage.removeItem('jwt_token'); token = null; }
+  })();
+}
+</script>
+</body>
+</html>
