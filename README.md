@@ -134,11 +134,49 @@ Login → ได้ token → ส่ง Authorization header
 
 ---
 
-## ⚠️ Known Limitations
+##  System Security & Logging Overview
 
-* ใช้ Self-Signed Certificate
-* ไม่มี refresh token
-* ไม่มี register system
-* Logging แบบพื้นฐาน
+### 1️⃣ HTTPS (TLS / SSL)
+
+- ใช้ **HTTPS** เพื่อเข้ารหัสข้อมูลระหว่าง Client ↔ Nginx  
+- Nginx ทำหน้าที่เป็น **TLS Termination**:  
+  - รับ HTTPS จาก client  
+  - ถอดรหัสแล้วส่ง request ภายในไปยัง Microservices ผ่าน HTTP  
+- ผลลัพธ์: ปลอดภัยจากการดักฟังข้อมูล (man-in-the-middle)
 
 ---
+
+### 2️⃣ JWT (JSON Web Token) Authentication
+
+- ทุกการเข้าสู่ระบบ (Login) จะสร้าง **JWT token** สำหรับผู้ใช้แต่ละคน  
+- Token จะเก็บข้อมูลสำคัญ:
+  - User ID, Email, Role, Expiration  
+- วิธีใช้งาน:
+  1. Login → รับ JWT token  
+  2. ส่ง token ใน HTTP Header ทุกครั้งที่เรียก endpoint ที่ต้อง authentication:
+     ```
+     Authorization: Bearer <token>
+     ```
+  3. Services ตรวจสอบ token ก่อนอนุญาตการใช้งาน  
+- ข้อดี:
+  - ไม่ต้องเก็บ session ใน server  
+  - รองรับระบบ Microservices ได้ง่าย  
+
+---
+
+### 3️⃣ Logging Flow
+
+- **ทุก request** ที่เข้าระบบ จะถูกบันทึกโดย **Log Service**  
+- ข้อมูลที่เก็บ:
+  - Timestamp, User ID, Endpoint, HTTP Method, Status Code  
+- Log จะถูกเก็บใน **PostgreSQL**  
+- สิทธิ์การเข้าถึง:
+  - **Admin** → ดู Log ได้  
+  - **Member** → ถูกปฏิเสธ (403)  
+
+- ผลลัพธ์:
+  - ช่วยตรวจสอบการใช้งาน  
+  - วิเคราะห์ปัญหาและเหตุการณ์ผิดปกติได้  
+
+---
+
