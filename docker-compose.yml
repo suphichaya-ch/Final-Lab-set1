@@ -1,67 +1,96 @@
-version: "3.9"
-
 services:
-  db:
-    image: postgres:15-alpine
-    restart: always
-    environment:
-      POSTGRES_USER: root
-      POSTGRES_PASSWORD: rootpassword
-      POSTGRES_DB: final_lab_db
-    ports:
-      - "5432:5432"
-    volumes:
-      # volume สำหรับเก็บ data
-      - db-data:/var/lib/postgresql/data
-      # mount ไฟล์ SQL จริง ๆ สำหรับ initialize
-      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
 
+  # ── PostgreSQL (Shared DB) ─────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB:      ${POSTGRES_DB}
+      POSTGRES_USER:    ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout:  5s
+      retries:  5
+    networks: [taskboard-net]
+
+  # ── Auth Service ───────────────────────────────────────────────────
+  auth-service:
+    build: ./auth-service
+    environment:
+      DB_HOST:      postgres
+      DB_PORT:      5432
+      DB_NAME:      ${POSTGRES_DB}
+      DB_USER:      ${POSTGRES_USER}
+      DB_PASSWORD:  ${POSTGRES_PASSWORD}
+      JWT_SECRET:   ${JWT_SECRET}
+      JWT_EXPIRES:  ${JWT_EXPIRES}
+      PORT:         3001
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [taskboard-net]
+    restart: unless-stopped
+
+  # ── Task Service ───────────────────────────────────────────────────
+  task-service:
+    build: ./task-service
+    environment:
+      DB_HOST:      postgres
+      DB_PORT:      5432
+      DB_NAME:      ${POSTGRES_DB}
+      DB_USER:      ${POSTGRES_USER}
+      DB_PASSWORD:  ${POSTGRES_PASSWORD}
+      JWT_SECRET:   ${JWT_SECRET}
+      PORT:         3002
+    depends_on:
+      postgres:     { condition: service_healthy }
+      auth-service: { condition: service_started }
+    networks: [taskboard-net]
+    restart: unless-stopped
+
+  # ── Log Service ────────────────────────────────────────────────────
+  log-service:
+    build: ./log-service
+    environment:
+      DB_HOST:      postgres
+      DB_PORT:      5432
+      DB_NAME:      ${POSTGRES_DB}
+      DB_USER:      ${POSTGRES_USER}
+      DB_PASSWORD:  ${POSTGRES_PASSWORD}
+      JWT_SECRET:   ${JWT_SECRET}
+      PORT:         3003
+    depends_on:
+      postgres: { condition: service_healthy }
+    networks: [taskboard-net]
+    restart: unless-stopped
+
+  # ── Frontend (Static HTML) ─────────────────────────────────────────
+  frontend:
+    build: ./frontend
+    networks: [taskboard-net]
+
+  # ── Nginx (API Gateway + TLS) ──────────────────────────────────────
   nginx:
     build: ./nginx
     ports:
       - "80:80"
       - "443:443"
+    volumes:
+      - ./nginx/certs:/etc/nginx/certs    # <-- แมป certs เข้า container
     depends_on:
-      - frontend
       - auth-service
       - task-service
       - log-service
-
-  frontend:
-    build: ./frontend
-
-  auth-service:
-    build: ./auth-service
-    ports:
-      - "3001:3001"
-    environment:
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_USER: root
-      DB_PASSWORD: rootpassword
-      DB_NAME: final_lab_db
-
-  task-service:
-    build: ./task-service
-    ports:
-      - "3002:3002"
-    environment:
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_USER: root
-      DB_PASSWORD: rootpassword
-      DB_NAME: final_lab_db
-
-  log-service:
-    build: ./log-service
-    ports:
-      - "3003:3003"
-    environment:
-      DB_HOST: db
-      DB_PORT: 5432
-      DB_USER: root
-      DB_PASSWORD: rootpassword
-      DB_NAME: final_lab_db
+      - frontend
+    networks: [taskboard-net]
+    restart: unless-stopped
 
 volumes:
-  db-data:
+  postgres_data:
+
+networks:
+  taskboard-net:
+    driver: bridge 
